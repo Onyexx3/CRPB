@@ -1,0 +1,42 @@
+Build a complete mini web application for collecting applications for a research project in Kaduna and Jos.
+
+
+Requirements:
+
+1) Landing page
+- Header, hero, about, requirements, benefits, CTA "Apply Now" "Login".
+- Apply anchors to application form page.
+- Login anchors to Applicant login.
+
+2) Application form
+- Collect all fields listed in the spec: personal, education, experience (KII/TGD Y/N + descriptions), availability, uploads (CV PDF, passport photo optional), declaration checkbox.
+- Validate fields server-side and client-side.
+- Save submissions to SQLite DB. Save uploads to /uploads with secure filenames.
+
+3) Applicant account & login
+- After submission, create an applicant record. Allow applicant login using Email + Phone Number. 
+  A) Simple credential login: user enters email + phone number; server verifies pair and opens session.
+- Implement an applicant dashboard that shows application status and timeline.
+- Applicant can download submitted CV and see admin notes and resumption details if shortlisted/employed.
+
+4) Admin panel
+- Secure admin login with credentials from .env.
+- Admin dashboard: table of applicants, search, filters (location, gender, KII, TGD, availability, status), view individual applications.
+- Actions: change status (Pending, Shortlisted, Employed, Rejected), add notes, add resumption/onboarding date. Trigger email notification on status change.
+- Export filtered list to CSV and Excel.
+
+5) Status & Notification workflow
+- Default status on submission: Pending.
+- Admin can change status: Pending → Shortlisted → Employed / Rejected.
+- On status change, send email to the applicant with details. Include resumption date/time and any instructions when Shortlisted or Employed.
+- Store timeline entries for each status change with timestamp and admin user.
+
+6) Stats page
+- Show counts: total applicants, Kaduna, Jos, KII experienced, TGD experienced, shortlisted/pending/rejected.
+
+
+8) Email
+- Templates for submission confirmation, shortlisted, employed, rejected.
+
+
+Make choices where needed to keep the app simple but production-reasonable. Provide the final code and instructions for deploying on Render.

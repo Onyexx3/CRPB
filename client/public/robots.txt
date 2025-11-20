@@ -1,0 +1,97 @@
+# Robots.txt for Cultural & Religious Pluralism Barometer
+# Field Officers Application System
+
+# Allow all search engines to crawl the site
+User-agent: *
+Allow: /
+
+# Specific rules for major search engines
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 0
+
+User-agent: Slurp
+Allow: /
+Crawl-delay: 1
+
+# Disallow admin areas and sensitive paths
+Disallow: /admin/
+Disallow: /api/
+Disallow: /applicant-login
+Disallow: /admin/login
+Disallow: /admin/dashboard
+Disallow: /admin/stats
+Disallow: /applicant-dashboard
+
+# Allow public pages
+Allow: /$
+Allow: /apply
+Allow: /about
+
+# Disallow file uploads directory
+Disallow: /uploads/
+
+# Disallow temporary and cache files
+Disallow: /*.json$
+Disallow: /node_modules/
+Disallow: /dist/
+Disallow: /.git/
+Disallow: /.env
+
+# Allow CSS, JS, and images for proper rendering
+Allow: /*.css$
+Allow: /*.js$
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.jpeg$
+Allow: /*.gif$
+Allow: /*.svg$
+Allow: /*.webp$
+Allow: /*.ico$
+
+# Sitemap location
+Sitemap: https://yoursite.com/sitemap.xml
+
+# Additional sitemaps (if you create them later)
+# Sitemap: https://yoursite.com/sitemap-pages.xml
+# Sitemap: https://yoursite.com/sitemap-images.xml
+
+# Crawl rate for specific bots
+User-agent: Googlebot-Image
+Allow: /assets/
+Allow: /images/
+
+User-agent: Googlebot-Mobile
+Allow: /
+
+# Block bad bots and scrapers
+User-agent: AhrefsBot
+Crawl-delay: 10
+
+User-agent: SemrushBot
+Crawl-delay: 10
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+# Social media crawlers (allow for rich previews)
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: WhatsApp
+Allow: /
+
+# Last updated: 2025-11-20
