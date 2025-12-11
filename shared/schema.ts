@@ -1,11 +1,11 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Applicants table - stores application submissions
-export const applicants = sqliteTable("applicants", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const applicants = pgTable("applicants", {
+  id: serial("id").primaryKey(),
   // Personal Information
   fullName: text("full_name").notNull(),
   email: text("email").notNull().unique(),
@@ -22,9 +22,9 @@ export const applicants = sqliteTable("applicants", {
   graduationYear: text("graduation_year").notNull(),
   
   // Experience
-  hasKiiExperience: integer("has_kii_experience", { mode: "boolean" }).notNull(), // Key Informant Interview
+  hasKiiExperience: boolean("has_kii_experience").notNull(), // Key Informant Interview
   kiiDescription: text("kii_description"),
-  hasTgdExperience: integer("has_tgd_experience", { mode: "boolean" }).notNull(), // Target Group Discussion
+  hasTgdExperience: boolean("has_tgd_experience").notNull(), // Target Group Discussion
   tgdDescription: text("tgd_description"),
   
   // Availability
@@ -43,18 +43,18 @@ export const applicants = sqliteTable("applicants", {
   resumptionDate: text("resumption_date"),
   resumptionDetails: text("resumption_details"),
   
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 // Status timeline - tracks all status changes
-export const statusTimeline = sqliteTable("status_timeline", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  applicantId: integer("applicant_id").notNull().references(() => applicants.id),
+export const statusTimeline = pgTable("status_timeline", {
+  id: serial("id").primaryKey(),
+  applicantId: serial("applicant_id").notNull().references(() => applicants.id),
   status: text("status").notNull(),
   notes: text("notes"),
   changedBy: text("changed_by").notNull(), // admin email
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // Insert schemas with validation

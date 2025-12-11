@@ -1,26 +1,37 @@
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, desc } from "drizzle-orm";
+import { Pool } from "pg";
 import { 
   type Applicant, 
   type InsertApplicant, 
   type StatusTimeline, 
   type InsertStatusTimeline,
-  type ApplicationStats
+  type ApplicationStats,
+  applicants,
+  statusTimeline
 } from "@shared/schema";
 import path from "path";
 import fs from "fs";
 
-const dbPath = path.join(process.cwd(), "database.sqlite");
-const db = new Database(dbPath);
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
 
-// Enable foreign keys
-db.pragma("foreign_keys = ON");
+// Create PostgreSQL connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+});
 
-// Initialize database schema
-function initializeDatabase() {
+// Create Drizzle instance
+const db = drizzle(pool);
+
+// Initialize database schema and uploads directory
+async function initializeDatabase() {
   // Create applicants table
-  db.exec(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS applicants (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       full_name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       phone_number TEXT NOT NULL,
@@ -32,9 +43,9 @@ function initializeDatabase() {
       field_of_study TEXT NOT NULL,
       institution TEXT NOT NULL,
       graduation_year TEXT NOT NULL,
-      has_kii_experience INTEGER NOT NULL,
+      has_kii_experience BOOLEAN NOT NULL,
       kii_description TEXT,
-      has_tgd_experience INTEGER NOT NULL,
+      has_tgd_experience BOOLEAN NOT NULL,
       tgd_description TEXT,
       availability_date TEXT NOT NULL,
       availability_status TEXT NOT NULL,
@@ -46,21 +57,20 @@ function initializeDatabase() {
       admin_notes TEXT,
       resumption_date TEXT,
       resumption_details TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
 
   // Create status_timeline table
-  db.exec(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS status_timeline (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      applicant_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      applicant_id INTEGER NOT NULL REFERENCES applicants(id),
       status TEXT NOT NULL,
       notes TEXT,
       changed_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (applicant_id) REFERENCES applicants(id)
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
 
@@ -88,91 +98,70 @@ export interface IStorage {
   getApplicationStats(): Promise<ApplicationStats>;
 }
 
-export class SQLiteStorage implements IStorage {
+export class PostgreSQLStorage implements IStorage {
   constructor() {
-    initializeDatabase();
+    initializeDatabase().catch(err => {
+      console.error("Failed to initialize database:", err);
+      throw err;
+    });
   }
 
   async createApplicant(applicant: InsertApplicant): Promise<Applicant> {
-    const stmt = db.prepare(`
-      INSERT INTO applicants (
-        full_name, email, phone_number, gender, date_of_birth, location, address,
-        highest_qualification, field_of_study, institution, graduation_year,
-        has_kii_experience, kii_description, has_tgd_experience, tgd_description,
-        availability_date, availability_status, cv_file_path, cv_file_name,
-        passport_photo_path, passport_photo_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
-      applicant.fullName,
-      applicant.email,
-      applicant.phoneNumber,
-      applicant.gender,
-      applicant.dateOfBirth,
-      applicant.location,
-      applicant.address,
-      applicant.highestQualification,
-      applicant.fieldOfStudy,
-      applicant.institution,
-      applicant.graduationYear,
-      applicant.hasKiiExperience ? 1 : 0,
-      applicant.kiiDescription || null,
-      applicant.hasTgdExperience ? 1 : 0,
-      applicant.tgdDescription || null,
-      applicant.availabilityDate,
-      applicant.availabilityStatus,
-      applicant.cvFilePath,
-      applicant.cvFileName,
-      applicant.passportPhotoPath || null,
-      applicant.passportPhotoName || null
-    );
-
-    const id = result.lastInsertRowid as number;
+    const [newApplicant] = await db.insert(applicants).values({
+      fullName: applicant.fullName,
+      email: applicant.email,
+      phoneNumber: applicant.phoneNumber,
+      gender: applicant.gender,
+      dateOfBirth: applicant.dateOfBirth,
+      location: applicant.location,
+      address: applicant.address,
+      highestQualification: applicant.highestQualification,
+      fieldOfStudy: applicant.fieldOfStudy,
+      institution: applicant.institution,
+      graduationYear: applicant.graduationYear,
+      hasKiiExperience: applicant.hasKiiExperience,
+      kiiDescription: applicant.kiiDescription || null,
+      hasTgdExperience: applicant.hasTgdExperience,
+      tgdDescription: applicant.tgdDescription || null,
+      availabilityDate: applicant.availabilityDate,
+      availabilityStatus: applicant.availabilityStatus,
+      cvFilePath: applicant.cvFilePath,
+      cvFileName: applicant.cvFileName,
+      passportPhotoPath: applicant.passportPhotoPath || null,
+      passportPhotoName: applicant.passportPhotoName || null,
+    }).returning();
     
     // Create initial timeline entry
     await this.createTimelineEntry({
-      applicantId: id,
+      applicantId: newApplicant.id,
       status: "Pending",
       notes: "Application submitted",
       changedBy: "System",
     });
 
-    return this.getApplicantById(id) as Promise<Applicant>;
+    return newApplicant;
   }
 
   async getApplicantById(id: number): Promise<Applicant | undefined> {
-    const stmt = db.prepare(`SELECT * FROM applicants WHERE id = ?`);
-    const row = stmt.get(id) as any;
-    
-    if (!row) return undefined;
-    
-    return this.mapRowToApplicant(row);
+    const [applicant] = await db.select().from(applicants).where(eq(applicants.id, id));
+    return applicant;
   }
 
   async getApplicantByEmail(email: string): Promise<Applicant | undefined> {
-    const stmt = db.prepare(`SELECT * FROM applicants WHERE email = ?`);
-    const row = stmt.get(email) as any;
-    
-    if (!row) return undefined;
-    
-    return this.mapRowToApplicant(row);
+    const [applicant] = await db.select().from(applicants).where(eq(applicants.email, email));
+    return applicant;
   }
 
   async getApplicantByEmailAndPhone(email: string, phoneNumber: string): Promise<Applicant | undefined> {
-    const stmt = db.prepare(`SELECT * FROM applicants WHERE email = ? AND phone_number = ?`);
-    const row = stmt.get(email, phoneNumber) as any;
-    
-    if (!row) return undefined;
-    
-    return this.mapRowToApplicant(row);
+    const result = await pool.query(
+      'SELECT * FROM applicants WHERE email = $1 AND phone_number = $2',
+      [email, phoneNumber]
+    );
+    return result.rows[0] ? this.mapRowToApplicant(result.rows[0]) : undefined;
   }
 
   async getAllApplicants(): Promise<Applicant[]> {
-    const stmt = db.prepare(`SELECT * FROM applicants ORDER BY created_at DESC`);
-    const rows = stmt.all() as any[];
-    
-    return rows.map(row => this.mapRowToApplicant(row));
+    return await db.select().from(applicants).orderBy(desc(applicants.createdAt));
   }
 
   async updateApplicantStatus(
@@ -182,64 +171,51 @@ export class SQLiteStorage implements IStorage {
     resumptionDate?: string, 
     resumptionDetails?: string
   ): Promise<void> {
-    const stmt = db.prepare(`
-      UPDATE applicants 
-      SET status = ?, admin_notes = ?, resumption_date = ?, resumption_details = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-    
-    stmt.run(status, adminNotes || null, resumptionDate || null, resumptionDetails || null, id);
+    await db.update(applicants)
+      .set({
+        status,
+        adminNotes: adminNotes || null,
+        resumptionDate: resumptionDate || null,
+        resumptionDetails: resumptionDetails || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(applicants.id, id));
   }
 
   async createTimelineEntry(entry: InsertStatusTimeline): Promise<StatusTimeline> {
-    const stmt = db.prepare(`
-      INSERT INTO status_timeline (applicant_id, status, notes, changed_by)
-      VALUES (?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
-      entry.applicantId,
-      entry.status,
-      entry.notes || null,
-      entry.changedBy
-    );
-
-    const id = result.lastInsertRowid as number;
+    const [newEntry] = await db.insert(statusTimeline).values({
+      applicantId: entry.applicantId,
+      status: entry.status,
+      notes: entry.notes || null,
+      changedBy: entry.changedBy,
+    }).returning();
     
-    const selectStmt = db.prepare(`SELECT * FROM status_timeline WHERE id = ?`);
-    const row = selectStmt.get(id) as any;
-    
-    return this.mapRowToTimeline(row);
+    return newEntry;
   }
 
   async getApplicantTimeline(applicantId: number): Promise<StatusTimeline[]> {
-    const stmt = db.prepare(`
-      SELECT * FROM status_timeline 
-      WHERE applicant_id = ? 
-      ORDER BY created_at DESC
-    `);
-    const rows = stmt.all(applicantId) as any[];
-    
-    return rows.map(row => this.mapRowToTimeline(row));
+    return await db.select()
+      .from(statusTimeline)
+      .where(eq(statusTimeline.applicantId, applicantId))
+      .orderBy(desc(statusTimeline.createdAt));
   }
 
   async getApplicationStats(): Promise<ApplicationStats> {
-    const allStmt = db.prepare(`SELECT * FROM applicants`);
-    const applicants = allStmt.all() as any[];
+    const allApplicants = await db.select().from(applicants);
     
     return {
-      total: applicants.length,
-      kaduna: applicants.filter(a => a.location === "Kaduna").length,
-      jos: applicants.filter(a => a.location === "Jos").length,
-      kiiExperienced: applicants.filter(a => a.has_kii_experience === 1).length,
-      tgdExperienced: applicants.filter(a => a.has_tgd_experience === 1).length,
-      pending: applicants.filter(a => a.status === "Pending").length,
-      shortlisted: applicants.filter(a => a.status === "Shortlisted").length,
-      employed: applicants.filter(a => a.status === "Employed").length,
-      rejected: applicants.filter(a => a.status === "Rejected").length,
-      male: applicants.filter(a => a.gender === "Male").length,
-      female: applicants.filter(a => a.gender === "Female").length,
-      other: applicants.filter(a => a.gender === "Other").length,
+      total: allApplicants.length,
+      kaduna: allApplicants.filter(a => a.location === "Kaduna").length,
+      jos: allApplicants.filter(a => a.location === "Jos").length,
+      kiiExperienced: allApplicants.filter(a => a.hasKiiExperience).length,
+      tgdExperienced: allApplicants.filter(a => a.hasTgdExperience).length,
+      pending: allApplicants.filter(a => a.status === "Pending").length,
+      shortlisted: allApplicants.filter(a => a.status === "Shortlisted").length,
+      employed: allApplicants.filter(a => a.status === "Employed").length,
+      rejected: allApplicants.filter(a => a.status === "Rejected").length,
+      male: allApplicants.filter(a => a.gender === "Male").length,
+      female: allApplicants.filter(a => a.gender === "Female").length,
+      other: allApplicants.filter(a => a.gender === "Other").length,
     };
   }
 
@@ -257,9 +233,9 @@ export class SQLiteStorage implements IStorage {
       fieldOfStudy: row.field_of_study,
       institution: row.institution,
       graduationYear: row.graduation_year,
-      hasKiiExperience: row.has_kii_experience === 1,
+      hasKiiExperience: row.has_kii_experience,
       kiiDescription: row.kii_description,
-      hasTgdExperience: row.has_tgd_experience === 1,
+      hasTgdExperience: row.has_tgd_experience,
       tgdDescription: row.tgd_description,
       availabilityDate: row.availability_date,
       availabilityStatus: row.availability_status,
@@ -275,17 +251,6 @@ export class SQLiteStorage implements IStorage {
       updatedAt: row.updated_at,
     };
   }
-
-  private mapRowToTimeline(row: any): StatusTimeline {
-    return {
-      id: row.id,
-      applicantId: row.applicant_id,
-      status: row.status,
-      notes: row.notes,
-      changedBy: row.changed_by,
-      createdAt: row.created_at,
-    };
-  }
 }
 
-export const storage = new SQLiteStorage();
+export const storage = new PostgreSQLStorage();

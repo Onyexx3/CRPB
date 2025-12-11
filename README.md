@@ -19,6 +19,14 @@ The **Cultural and Religious Pluralism Barometer** is an innovative assessment t
 - 🕊️ Support peacebuilding and conflict prevention initiatives
 - 📈 Preserve the common good through data-driven insights
 
+### Why PostgreSQL?
+- ✅ **No Native Compilation** - Pure JavaScript driver, no platform issues
+- ✅ **Cross-Platform** - Develop on Windows, deploy to Linux seamlessly
+- ✅ **Production Ready** - Industry-standard database for scalable applications
+- ✅ **Free Cloud Options** - Neon, Supabase, Railway offer free tiers
+- ✅ **cPanel Compatible** - Works perfectly on shared hosting environments
+- ✅ **Type-Safe** - Drizzle ORM provides full TypeScript support
+
 ## Features
 
 ### Public Features
@@ -77,14 +85,17 @@ The **Cultural and Religious Pluralism Barometer** is an innovative assessment t
 
 ### Backend
 - **Express.js** with TypeScript
-- **better-sqlite3** for database
+- **PostgreSQL** with `pg` driver
+- **Drizzle ORM** for database operations
 - **Multer** for file uploads
 - **Nodemailer** for email
 - **Express-session** for authentication
 
 ### Database
-- **SQLite** for development (easily upgradeable to PostgreSQL)
+- **PostgreSQL** (Neon or cPanel PostgreSQL)
+- **Drizzle ORM** for type-safe queries
 - Two tables: `applicants` and `status_timeline`
+- Automatic schema initialization on startup
 
 ## Getting Started
 
@@ -110,14 +121,28 @@ npm install
 cp .env.example .env
 ```
 
-4. Configure environment variables in `.env`:
-```env
-# Required
-SESSION_SECRET=your-secret-key
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your-password
+4. Set up PostgreSQL database:
 
-# Optional (for email)
+**Option A: Use Free Neon Database (Recommended)**
+- Visit [neon.tech](https://neon.tech)
+- Create a free account and database
+- Copy the connection string
+
+**Option B: Local PostgreSQL**
+- Install PostgreSQL on your machine
+- Create a database: `createdb kaduna_research_db`
+
+5. Configure environment variables in `.env`:
+```env
+# Database (Required)
+DATABASE_URL=postgresql://user:password@host:port/database
+
+# Admin Credentials (Required)
+SESSION_SECRET=your-secure-random-secret-key
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=your-secure-password
+
+# Optional (for email notifications)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
@@ -125,23 +150,30 @@ SMTP_PASS=your-app-password
 SMTP_FROM=noreply@example.com
 ```
 
-5. Start development server:
+6. Push database schema:
+```bash
+npm run db:push
+```
+
+7. Start development server:
 ```bash
 npm run dev
 ```
 
-6. Open browser:
+8. Open browser:
 ```
-http://localhost:5000
+http://localhost:5001
 ```
 
 ## Available Scripts
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
+- `npm run dev` - Start development server (port 5001)
+- `npm run build` - Build for production (creates dist/server.cjs and dist/public/)
+- `npm run build:cpanel` - Alias for build (optimized for cPanel deployment)
+- `npm start` - Start production server locally
+- `npm run start:cpanel` - Start production server via app.cjs (cPanel mode)
 - `npm run check` - Type check with TypeScript
-- `npm run db:push` - Push database schema changes
+- `npm run db:push` - Push database schema changes to PostgreSQL
 
 ## Project Structure
 
@@ -156,12 +188,15 @@ KadunaResearchApp/
 ├── server/                 # Backend Express application
 │   ├── index.ts           # Server entry point
 │   ├── routes.ts          # API routes
-│   ├── storage.ts         # Database operations
+│   ├── storage.ts         # PostgreSQL database operations
 │   └── email.ts           # Email service
 ├── shared/                 # Shared types and schemas
-│   └── schema.ts          # Zod schemas and types
+│   └── schema.ts          # Drizzle schemas and Zod validation
 ├── uploads/               # Uploaded files directory
-├── database.sqlite        # SQLite database
+├── dist/                  # Production build output
+├── app.cjs                # Production entry point (cPanel)
+├── .htaccess              # Apache/Passenger configuration
+├── drizzle.config.ts      # Drizzle ORM configuration
 └── package.json           # Project dependencies
 ```
 
@@ -191,19 +226,84 @@ KadunaResearchApp/
 
 ## Deployment
 
-See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for detailed instructions on deploying to Render.
+### Deploying to Namecheap cPanel (or Similar Shared Hosting)
 
-### Quick Deployment Steps
+#### Prerequisites
+- cPanel account with Node.js support
+- PostgreSQL database support
+- SSH access (optional but helpful)
 
-1. Push code to GitHub
-2. Create a new Web Service on Render
-3. Connect your GitHub repository
-4. Set environment variables
-5. Deploy!
+#### Deployment Steps
 
-**Note**: The free tier uses ephemeral storage. For production, consider:
-- Upgrading to a paid plan with persistent disk
-- Migrating to PostgreSQL for the database
+1. **Create PostgreSQL Database in cPanel**
+   - Go to cPanel → PostgreSQL Databases
+   - Create database (e.g., `kaduna_research_db`)
+   - Create user with strong password
+   - Grant ALL PRIVILEGES to the user
+
+2. **Build the Application Locally**
+   ```bash
+   npm run build
+   ```
+
+3. **Upload Files to cPanel**
+   
+   Upload via File Manager or FTP:
+   - `app.cjs`
+   - `.htaccess`
+   - `.env` (with production values)
+   - `package.json`
+   - `package-lock.json`
+   - `dist/` folder (entire directory)
+   - `uploads/` folder (create empty if not exists)
+   
+   **DO NOT upload:**
+   - `node_modules/` (install on server)
+   - `client/`, `server/` source folders
+   - `database.sqlite`
+
+4. **Set Environment Variables**
+   
+   In cPanel → Setup Node.js App → Environment Variables:
+   ```env
+   DATABASE_URL=postgresql://user:password@localhost:5432/database_name
+   NODE_ENV=production
+   SESSION_SECRET=your-secure-random-secret
+   ADMIN_EMAIL=admin@example.com
+   ADMIN_PASSWORD=your-secure-password
+   ```
+
+5. **Setup Node.js Application in cPanel**
+   - Go to "Setup Node.js App"
+   - Click "Create Application"
+   - Application mode: Production
+   - Application root: Your domain folder
+   - Application URL: Your domain
+   - Application startup file: `app.cjs`
+   - Node.js version: 18.x or higher
+   - Click "Create"
+
+6. **Install Dependencies on Server**
+   
+   Via cPanel Terminal or SSH:
+   ```bash
+   cd ~/your-domain-folder
+   npm install --production
+   ```
+
+7. **Start the Application**
+   - In "Setup Node.js App", click "Start App"
+   - Wait for status to show "Running"
+
+8. **Verify Deployment**
+   - Visit your domain
+   - Test applicant submission
+   - Test admin login
+   - Check that files upload correctly
+
+### Alternative: Deploy to Cloud with Neon Database
+
+You can also deploy to cloud platforms (Railway, Render, Vercel) and use your Neon PostgreSQL database from anywhere.
 
 ## Configuration
 
@@ -274,29 +374,54 @@ If email is not configured, the app will work but won't send notifications.
 ## Troubleshooting
 
 ### Port Already in Use
-If port 5000 is in use, modify `server/index.ts`:
-```typescript
-const PORT = process.env.PORT || 3000;
+If port 5001 is in use, set a different port in `.env`:
+```env
+PORT=3000
 ```
 
-### Database Locked
-Stop all running instances of the application and try again.
+### Database Connection Issues
+
+**Error: "DATABASE_URL is required"**
+- Ensure `DATABASE_URL` is set in `.env`
+- Check the connection string format is correct
+
+**Error: "connect ECONNREFUSED"**
+- Database server is not running
+- Wrong host/port in DATABASE_URL
+- For cPanel: use `localhost:5432`
+- For Neon: check the connection string
+
+**Error: "password authentication failed"**
+- Wrong username or password in DATABASE_URL
+- User doesn't have database privileges
+- Check cPanel PostgreSQL user settings
 
 ### File Upload Fails
-- Check file size (max 5MB)
+- Check file size (max 5MB for CV)
 - Ensure file is PDF for CV
-- Verify uploads directory exists and is writable
+- Verify `uploads/` directory exists and is writable
+- Check disk space on server
 
 ### Email Not Sending
-- Verify SMTP credentials
+- Verify SMTP credentials in `.env`
 - Check spam folder
-- For Gmail, ensure app password is used
+- For Gmail, ensure 2FA is enabled and app password is used
 - Check server logs for error messages
+- Email is optional - app works without it
 
 ### Admin Can't Login
-- Verify ADMIN_EMAIL and ADMIN_PASSWORD in .env
+- Verify `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`
 - Check for extra spaces in environment variables
 - Try clearing browser cookies
+- Check server logs for authentication errors
+
+### Application Won't Start on cPanel
+- Check `app.cjs` exists in root directory
+- Verify `dist/server.cjs` was built
+- Check environment variables are set
+- View logs: `~/logs/passenger.log`
+- Ensure Node.js version is 18.x or higher
+- Run `npm install --production` on the server
 
 ## Contributing
 
@@ -318,7 +443,19 @@ Stop all running instances of the application and try again.
 
 ## Recent Updates
 
-### Version 1.9.0 (November 2025)
+### Version 2.0.0 (December 2024)
+- ✅ **Migrated from SQLite to PostgreSQL**
+- ✅ Integrated Drizzle ORM for type-safe database operations
+- ✅ Eliminated native module compilation issues (better-sqlite3 removed)
+- ✅ Added support for cloud databases (Neon, Supabase, Railway)
+- ✅ Implemented production-ready cPanel deployment configuration
+- ✅ Created `app.cjs` entry point for shared hosting compatibility
+- ✅ Added `.htaccess` for Apache/Passenger configuration
+- ✅ Full cross-platform compatibility (Windows development → Linux production)
+- ✅ Automatic database schema initialization on startup
+- ✅ Enhanced security with connection pooling and SSL support
+
+### Version 1.9.0 (November 2024)
 - ✅ Complete rebranding to Cultural & Religious Pluralism Barometer
 - ✅ Updated from generic research to Barometer-specific project
 - ✅ Changed TGD to FGD (Focus Group Discussions) terminology
@@ -364,5 +501,7 @@ Built with modern web technologies and best practices for production use.
 
 ---
 
-**Version**: 1.1.0  
-**Last Updated**: November 2024
+**Version**: 2.0.0  
+**Last Updated**: December 2024  
+**Database**: PostgreSQL with Drizzle ORM  
+**Deployment**: cPanel/Shared Hosting Ready
