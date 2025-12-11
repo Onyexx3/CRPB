@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, desc } from "drizzle-orm";
-import pg from "pg";
-const { Pool } = pg;
+import pkg from "pg";
+const Pool = pkg.Pool;
 import { 
   type Applicant, 
   type InsertApplicant, 

@@ -5,107 +5,133 @@ This guide provides step-by-step instructions for deploying this Node.js/Express
 ## Prerequisites
 
 Before you begin, ensure you have:
-- cPanel shared hosting account with Node.js support
+- cPanel shared hosting account with Node.js support (CloudLinux/Passenger)
 - Access to cPanel File Manager
 - Your domain or subdomain configured
-- Database credentials (PostgreSQL or MySQL)
+- PostgreSQL database (cPanel PostgreSQL or external service like Neon)
+
+## Understanding the Build
+
+This application has two parts:
+- **Frontend** (React): Built by Vite into static files
+- **Backend** (Express): Bundled by esbuild into a single CommonJS file
+
+Both are built locally before upload. cPanel runs only the bundled production code.
 
 ## Step 1: Build the Application Locally
 
-Before uploading, you need to build the production version:
+Run the build command on your local machine:
 
 ```bash
+npm install
 npm run build
 ```
 
 This creates:
-- `dist/public/` - Frontend static files
-- `dist/server.cjs` - Backend server bundle
+- `dist/public/` - Frontend static files (HTML, CSS, JS, images)
+- `dist/server.cjs` - Backend server bundle (all server code in one file)
+
+Verify the build succeeded by checking these files exist.
 
 ## Step 2: Prepare Files for Upload
 
-Create a ZIP file containing these files/folders:
+Create a ZIP file containing ONLY these files/folders:
 
-**INCLUDE:**
-- `dist/` folder (entire folder with public/ and server.cjs)
-- `uploads/` folder (create empty if doesn't exist)
-- `app.cjs` (root entry point)
-- `package.json`
-- `package-lock.json`
-- `.htaccess` (create this - see below)
+**MUST INCLUDE:**
+```
+dist/                    # Contains both server.cjs and public/
+├── server.cjs          # Bundled backend
+└── public/             # Built frontend
+    ├── index.html
+    ├── favicon.png
+    └── assets/
+        ├── index-*.css
+        └── index-*.js
+
+app.cjs                  # Entry point (loads dist/server.cjs)
+package.json             # For npm install (production deps only)
+package-lock.json        # Lock file for consistent installs
+.htaccess                # cPanel routing configuration
+uploads/                 # Empty folder for user file uploads
+```
 
 **DO NOT INCLUDE:**
-- `node_modules/`
-- `.git/`
-- `client/` (source files - already built in dist)
-- `server/` (source files - already bundled)
-- `.env` (will configure in cPanel)
-- Any `.zip` files
+- `node_modules/` - Will be installed on server
+- `.git/` - Not needed
+- `client/` - Source files, already built in dist/public
+- `server/` - Source files, already bundled in dist/server.cjs
+- `shared/` - Source files, already bundled in dist/server.cjs
+- `.env` - Will configure in cPanel environment variables
+- `*.zip` files - Old archives
 
-## Step 3: Configure .htaccess File
+## Step 3: Configure .htaccess Before Upload
 
-A `.htaccess` file is already included in your project. Before uploading, you MUST update the placeholder values:
+**CRITICAL:** The `.htaccess` file has placeholder values that MUST be updated before uploading.
 
-Open `.htaccess` and replace:
-- `YOUR_USERNAME` with your actual cPanel username
-- `YOUR_DOMAIN_FOLDER` with your actual domain folder name
-
-Example - Before:
+Open `.htaccess` and find these lines:
 ```apache
 PassengerAppRoot "/home/YOUR_USERNAME/YOUR_DOMAIN_FOLDER"
 PassengerNodejs "/home/YOUR_USERNAME/nodevenv/YOUR_DOMAIN_FOLDER/20/bin/node"
 ```
 
-Example - After (if username is "john" and domain folder is "myapp.com"):
+Replace the placeholders:
+- `YOUR_USERNAME` → Your cPanel username (e.g., `john123`)
+- `YOUR_DOMAIN_FOLDER` → Your domain folder name (e.g., `myapp.com` or `public_html`)
+
+**Example after editing:**
 ```apache
-PassengerAppRoot "/home/john/myapp.com"
-PassengerNodejs "/home/john/nodevenv/myapp.com/20/bin/node"
+PassengerAppRoot "/home/john123/myapp.com"
+PassengerNodejs "/home/john123/nodevenv/myapp.com/20/bin/node"
 ```
 
-**Important:** The Node.js version in the path (e.g., `/20/`) must match the version selected in cPanel Setup Node.js App.
+**The `20` in the path must match your Node.js version** - if using Node 18, use `/18/`.
 
-**Note:** If your cPanel uses a different Node.js setup method, it may auto-generate this file when you create the Node.js application.
+**Alternative:** Some cPanel setups auto-generate this file when you create the Node.js application. In that case, do NOT upload .htaccess and let cPanel create it.
 
 ## Step 4: Upload Files to cPanel
 
 1. **Log into cPanel**
 2. Navigate to **File Manager**
-3. Go to your application directory (NOT public_html for main domain)
-   - For subdomain: `/home/yourusername/yourdomain`
-   - For main domain with Node.js: `/home/yourusername/myapp`
+3. Go to your application directory:
+   - Main domain: `/home/yourusername/public_html` (or a subfolder)
+   - Subdomain: `/home/yourusername/subdomain.yourdomain.com`
+   - Addon domain: Check cPanel for the correct path
 4. Click **Upload** and upload your ZIP file
-5. Select the ZIP file and click **Extract**
+5. Select the ZIP file → Click **Extract**
 6. Delete the ZIP file after extraction
+7. Verify all files are in the correct location
 
 ## Step 5: Set Up Node.js Application in cPanel
 
-1. In cPanel, go to **Software** > **Setup Node.js App**
+1. In cPanel, go to **Software** → **Setup Node.js App**
 2. Click **CREATE APPLICATION**
-3. Configure the following:
+3. Fill in the settings:
 
 | Setting | Value |
 |---------|-------|
-| Node.js version | 18.x or higher (latest available) |
-| Application mode | Production |
-| Application root | Path to your uploaded files (e.g., `/home/username/myapp`) |
+| Node.js version | 18.x or 20.x (latest LTS available) |
+| Application mode | **Production** |
+| Application root | Full path to your files (e.g., `/home/john123/myapp.com`) |
 | Application URL | Select your domain/subdomain |
-| Application startup file | `app.cjs` |
+| Application startup file | **app.cjs** |
 
 4. Click **CREATE**
 
+**Note:** After creation, cPanel may auto-generate or update the .htaccess file.
+
 ## Step 6: Configure Environment Variables
 
-In the Node.js application settings, add these environment variables:
+In the Node.js application settings, scroll to **Environment Variables** and add:
 
 ### Required Variables:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `NODE_ENV` | Environment mode | `production` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname` |
-| `SESSION_SECRET` | Random secure string for sessions | `your-random-32-char-string` |
+| `NODE_ENV` | Must be production | `production` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/dbname?sslmode=require` |
+| `SESSION_SECRET` | Random 32+ character string | `x7k2m9p4q8r1t6w3y5u0i` |
 | `ADMIN_EMAIL` | Admin login email | `admin@example.com` |
-| `ADMIN_PASSWORD` | Admin login password | `your-secure-password` |
+| `ADMIN_PASSWORD` | Admin login password | `YourSecurePassword123!` |
 
 ### Optional Variables (for email notifications):
 
@@ -114,139 +140,178 @@ In the Node.js application settings, add these environment variables:
 | `SMTP_HOST` | Email server host | `smtp.gmail.com` |
 | `SMTP_PORT` | Email server port | `587` |
 | `SMTP_USER` | Email username | `your-email@gmail.com` |
-| `SMTP_PASS` | Email password/app password | `app-specific-password` |
-| `EMAIL_FROM` | From address for emails | `noreply@yourdomain.com` |
+| `SMTP_PASS` | Email app password | `xxxx xxxx xxxx xxxx` |
+| `EMAIL_FROM` | From address | `noreply@yourdomain.com` |
 
-**Note:** PORT is automatically assigned by cPanel - do not set it manually.
+**Important:** Do NOT set PORT manually - cPanel assigns it automatically.
 
-## Step 7: Install Dependencies
+Click **SAVE** after adding all variables.
 
-1. Return to your Node.js application in cPanel
-2. Click **Run NPM Install**
-3. Wait for completion (may take 1-2 minutes)
+## Step 7: Install Production Dependencies
 
-If npm install fails due to memory limits, you may need to:
-- Contact your hosting provider to increase memory limits
-- Or install dependencies locally and upload `node_modules/` (not recommended)
+1. In the Node.js application page, find the **Run NPM Install** button
+2. Click it and wait for completion (1-3 minutes)
+3. Look for a success message
 
-## Step 8: Set Up Database
+**If npm install fails:**
+- Check cPanel error logs
+- Contact hosting provider about memory limits
+- Try SSH if available: `npm install --production`
 
-### Option A: Using cPanel PostgreSQL (if available)
-1. Go to **Databases** > **PostgreSQL Databases**
-2. Create a new database and user
-3. Note the connection details for your DATABASE_URL
+## Step 8: Set Up PostgreSQL Database
 
-### Option B: Using External Database Service
-Use services like:
-- Neon (https://neon.tech) - Free PostgreSQL
-- Supabase (https://supabase.com) - Free PostgreSQL
-- ElephantSQL (https://elephantsql.com)
+### Option A: cPanel PostgreSQL (if available)
+1. Go to **Databases** → **PostgreSQL Databases**
+2. Create a new database (e.g., `myapp_db`)
+3. Create a new user with a strong password
+4. Add the user to the database with ALL PRIVILEGES
+5. Use connection string: `postgresql://user:password@localhost:5432/database`
 
-Connection string format:
+### Option B: External PostgreSQL Service (Recommended)
+
+**Neon** (https://neon.tech) - Free tier available:
+1. Create account and project
+2. Copy the connection string from dashboard
+3. Add `?sslmode=require` if not included
+
+**Supabase** (https://supabase.com):
+1. Create project
+2. Go to Settings → Database → Connection string
+3. Use the "URI" format with your password
+
+Example connection string:
 ```
-postgresql://username:password@host:port/database?sslmode=require
+postgresql://username:password@hostname.neon.tech:5432/neondb?sslmode=require
 ```
 
-## Step 9: Initialize Database Tables
-
-The application will automatically create required tables on first run. If you need to manually initialize:
-
-1. Connect to your database using a PostgreSQL client
-2. The tables `applicants` and `status_timeline` will be created automatically
-
-## Step 10: Start the Application
+## Step 9: Start the Application
 
 1. Return to **Setup Node.js App** in cPanel
-2. Click **START** or **RESTART**
-3. Wait for status to show "Running"
-4. Click **OPEN** to view your application
+2. Click **START** (or **RESTART** if already started)
+3. Wait for status to show "Running" (green indicator)
+4. Click **OPEN** to test your application
 
-## Step 11: Configure Uploads Directory
+## Step 10: Set Uploads Directory Permissions
 
 1. In File Manager, navigate to your application root
-2. Create an `uploads` folder if it doesn't exist
-3. Right-click on `uploads` > **Change Permissions**
-4. Set permissions to **755** or **775**
+2. Find the `uploads` folder (create it if missing)
+3. Right-click → **Change Permissions**
+4. Set to **755** or **775**
+5. Click **Change Permissions**
 
 ## Troubleshooting
 
 ### 503 Service Unavailable
-**Causes & Solutions:**
 
-1. **Application not started**
-   - Go to Setup Node.js App and click START/RESTART
+This is the most common error. Check these in order:
 
-2. **Missing dependencies**
-   - Click "Run NPM Install" in Node.js settings
+1. **Application not running**
+   - Go to Setup Node.js App → Click START/RESTART
+   - Check if status shows "Running"
 
-3. **Database connection error**
-   - Verify DATABASE_URL is correct
-   - Check if database server allows external connections
-   - For Neon/Supabase, ensure SSL is enabled in connection string
+2. **.htaccess misconfigured**
+   - Verify username and paths are correct
+   - Delete .htaccess and let cPanel regenerate it
+   - Check Node version in path matches selected version
 
-4. **Port conflict**
-   - Ensure your code uses `process.env.PORT` (already configured)
+3. **Missing dist files**
+   - Verify `dist/server.cjs` exists
+   - Verify `dist/public/index.html` exists
+   - Re-upload the dist folder if missing
 
-5. **Build files missing**
-   - Verify `dist/public/` and `dist/server.cjs` exist
-   - Re-run `npm run build` locally and re-upload
+4. **Dependencies not installed**
+   - Click "Run NPM Install" again
+   - Check for error messages in logs
+
+5. **Database connection failed**
+   - Verify DATABASE_URL is correct and complete
+   - Test database connection with a PostgreSQL client
+   - Ensure `?sslmode=require` for external databases
+
+6. **Environment variables not set**
+   - Check all required variables are added
+   - Verify NODE_ENV is set to `production`
+
+### How to Check Error Logs
+
+1. Go to Setup Node.js App
+2. Click on your application
+3. Look for **View Log** or **Stderr log** link
+4. Check for error messages
 
 ### Cannot GET / Error
-- Check that startup file is set to `app.cjs`
+- Startup file must be `app.cjs` (not app.js or server.js)
 - Verify `dist/public/index.html` exists
-- Check cPanel error logs
+- Check that dist/server.cjs exists and is not corrupted
 
-### Application Crashes on Startup
-- Check error logs in cPanel (Setup Node.js App > Logs)
+### Application Starts Then Stops
+- Check error logs for crash reason
 - Verify all environment variables are set
-- Ensure DATABASE_URL is valid
+- Ensure DATABASE_URL is accessible from cPanel server
 
-### Static Files Not Loading
-- Verify `dist/public/` folder was uploaded
-- Check that files have correct permissions
+### Uploaded Files Not Working
+- Check `uploads` folder has write permissions (755 or 775)
+- Verify the folder exists in application root
 
 ## Updating the Application
 
-When you need to deploy updates:
+When you make changes:
 
 1. Run `npm run build` locally
-2. Create a new ZIP with updated `dist/` folder
-3. Upload and extract via File Manager (overwrite existing)
-4. Go to Setup Node.js App and click **RESTART**
+2. Create a new ZIP with ONLY the updated `dist/` folder
+3. Upload to cPanel File Manager
+4. Extract (overwrite existing files)
+5. Go to Setup Node.js App → Click **RESTART**
 
-## File Structure After Deployment
+**Tip:** You don't need to re-run npm install unless package.json changed.
 
-Your cPanel application directory should look like:
+## Final Directory Structure
+
+After successful deployment, your cPanel directory should look like:
 
 ```
-/home/username/myapp/
-├── app.cjs              # Entry point
-├── package.json
-├── package-lock.json
-├── .htaccess
-├── node_modules/        # Created by npm install
-├── uploads/             # User uploads
+/home/username/yourdomain/
+├── app.cjs                 # Entry point (points to dist/server.cjs)
+├── package.json            # Dependencies list
+├── package-lock.json       # Lock file
+├── .htaccess              # cPanel routing (may be auto-generated)
+├── node_modules/          # Created by npm install
+├── uploads/               # User file uploads
 └── dist/
-    ├── server.cjs       # Bundled server
-    └── public/          # Built frontend
+    ├── server.cjs         # Bundled Express server
+    └── public/            # Built React frontend
         ├── index.html
         ├── favicon.png
+        ├── robots.txt
+        ├── sitemap.xml
         └── assets/
             ├── index-*.css
-            └── index-*.js
+            ├── index-*.js
+            └── *.png
 ```
 
 ## Security Recommendations
 
-1. **Use strong passwords** for ADMIN_PASSWORD and database
-2. **Set SESSION_SECRET** to a random 32+ character string
-3. **Enable HTTPS** in cPanel (most hosts provide free SSL)
-4. **Regular backups** of uploads folder and database
-5. **Keep Node.js updated** to the latest LTS version
+1. **Strong passwords**: Use complex passwords for ADMIN_PASSWORD and database
+2. **Unique SESSION_SECRET**: Generate a random 32+ character string
+3. **Enable HTTPS**: Use cPanel's free SSL certificate (Let's Encrypt)
+4. **Regular backups**: Back up uploads folder and database regularly
+5. **Update Node.js**: Use the latest LTS version available
 
-## Support
+## Quick Reference: Common cPanel Paths
 
-If you encounter issues:
-1. Check cPanel error logs (Setup Node.js App > View Log)
-2. Verify all environment variables are set correctly
-3. Contact your hosting provider for Node.js specific issues
+| Item | Typical Path |
+|------|--------------|
+| Home directory | `/home/username/` |
+| Main domain | `/home/username/public_html/` |
+| Subdomain | `/home/username/subdomain.domain.com/` |
+| Node virtual env | `/home/username/nodevenv/domain/VERSION/` |
+| Error logs | cPanel → Setup Node.js App → View Log |
+
+## Getting Help
+
+If you're still stuck:
+1. Check cPanel error logs first
+2. Verify all steps were followed correctly
+3. Contact your hosting provider's support
+4. Share error log contents when asking for help
